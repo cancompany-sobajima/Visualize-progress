@@ -20,7 +20,14 @@ SCOPES = [
 # SERVICE_ACCOUNT_FILE = Path(__file__).parent / "service_account.json"
 PRODUCT_MASTER_PATH = Path(__file__).parent / "商品マスタ.xlsx"
 
-# ...
+# --- 3. ★★★ ここにスプレッドシートのIDとシート名を入力してください ★★★ ---
+PLAN_SHEET_ID = "1Nx1cIlaBToKLdl_d7DK-5JWNKEcBGxtiEd0AajWKFTc"
+PLAN_WORKSHEET_NAME = "抽出先"  # 生産予定データのシート名
+# -------------------------------------------------------------
+
+# 名寄せマスタのパスは変更なし
+DATA_DIR = Path(__file__).parent / "data"
+NAME_MASTER_PATH = DATA_DIR / "name_master.json"
 
 @st.cache_resource(ttl=600)
 def _get_gsheet_client():
