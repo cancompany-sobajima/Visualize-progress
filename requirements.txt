@@ -1,0 +1,7 @@
+streamlit
+pandas
+numpy
+unicodedata2
+gspread
+google-auth-oauthlib
+openpyxl

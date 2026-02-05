@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / dll files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# Editor directories and files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.venv/
+venv/
+env/
+
+# Firebase service account key
+service_account.json
+
+# Streamlit specific
+.streamlit/

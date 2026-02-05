@@ -1,0 +1,2 @@
+cd C:\Users\USER\Desktop\GeminiCLI\進捗見える化アプリ
+streamlit run app.py
