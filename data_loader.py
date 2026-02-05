@@ -16,29 +16,20 @@ SCOPES = [
 ]
 
 # --- 2. 認証情報ファイルへのパス ---
-# このJSONファイルはGoogle Cloudで作成し、プロジェクトのルートに配置してください。
-# (app.pyと同じ階層)
-SERVICE_ACCOUNT_FILE = Path(__file__).parent / "service_account.json"
+# Streamlit Secretsからサービスアカウント情報を読み込む
+# SERVICE_ACCOUNT_FILE = Path(__file__).parent / "service_account.json"
 PRODUCT_MASTER_PATH = Path(__file__).parent / "商品マスタ.xlsx"
 
-# --- 3. ★★★ ここにスプレッドシートのIDとシート名を入力してください ★★★ ---
-PLAN_SHEET_ID = "1Nx1cIlaBToKLdl_d7DK-5JWNKEcBGxtiEd0AajWKFTc"
-PLAN_WORKSHEET_NAME = "抽出先"  # 生産予定データのシート名
-# -------------------------------------------------------------
-
-# 名寄せマスタのパスは変更なし
-DATA_DIR = Path(__file__).parent / "data"
-NAME_MASTER_PATH = DATA_DIR / "name_master.json"
-
+# ...
 
 @st.cache_resource(ttl=600)
 def _get_gsheet_client():
     """gspreadクライアントを認証・初期化して返す。結果はStreamlitでキャッシュする。"""
-    if not SERVICE_ACCOUNT_FILE.exists():
-        st.error(f"認証ファイルが見つかりません: {SERVICE_ACCOUNT_FILE}")
-        st.stop()
+    # Streamlit Secretsからサービスアカウント情報を取得
+    service_account_info = st.secrets["service_account"]
     
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    # サービスアカウント情報を使って認証
+    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
     client = gspread.authorize(creds)
     return client
 
