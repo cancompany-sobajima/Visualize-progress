@@ -6,7 +6,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import numpy as np
 import subprocess
-import os
 import sys
 from datetime import timedelta
 
