@@ -7,8 +7,7 @@ import sys
 from datetime import datetime, time
 import logging
 
-# サービスアカウントキーファイルのパス
-SERVICE_ACCOUNT_KEY_PATH = r'C:\Users\USER\Desktop\GeminiCLI\line-production\serviceAccountKey.json'
+# サービスアカウントキーはコマンドライン引数から受け取ります
 
 # 出力ディレクトリのパス (スクリプトと同じディレクトリ)
 OUTPUT_DIR = os.path.dirname(__file__)
@@ -19,12 +18,12 @@ OUTPUT_FILENAME = os.path.join(OUTPUT_DIR, "production_records.xlsx")
 LOG_FILE = os.path.join(OUTPUT_DIR, "export_log.txt")
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def main(start_date_str, end_date_str):
+def main(start_date_str, end_date_str, service_account_path):
     logging.info(f"スクリプト開始: {start_date_str} ～ {end_date_str}")
     # --- Firestore Admin SDK の初期化 ---
     try:
         if not firebase_admin._apps:
-            cred = credentials.Certificate(SERVICE_ACCOUNT_KEY_PATH)
+            cred = credentials.Certificate(service_account_path)
             firebase_admin.initialize_app(cred)
         db = firestore.client()
         logging.info("Firebase Admin SDK の初期化に成功しました。")
@@ -119,7 +118,7 @@ def main(start_date_str, end_date_str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("エラー: 開始日、終了日、サービスアカウントキーのパスを 'YYYY-MM-DD' 形式でコマンドライン引数として指定してください。", file=sys.stderr, flush=True)
+        print("エラー: 開始日、終了日、サービスアカウントキーのパスをコマンドライン引数として指定してください。", file=sys.stderr, flush=True)
         print("例: python export_production_records.py 2024-07-29 2024-07-30 /path/to/key.json", file=sys.stderr, flush=True)
         sys.exit(1)
     
