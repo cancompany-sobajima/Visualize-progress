@@ -128,41 +128,61 @@ def load_results_data(date) -> pd.DataFrame:
     """
     外部スクリプトを実行してFirestoreから生産実績をExcelに抽出し、
     そのExcelファイルを読み込んで整形する。
+    認証情報は一時ファイル経経由で安全に渡す。
     """
-    # --- 1. 外部スクリプトを実行してExcelを生成 ---
+    # --- 1. 日付設定とパスの検証 ---
     end_date = date
     start_date = end_date - timedelta(days=1)
-    
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
 
     if not _EXTRACT_SCRIPT_PATH.is_file():
         st.error(f"実績取得スクリプトが見つかりません: {_EXTRACT_SCRIPT_PATH}")
+        st.info(f"確認してください: {_EXTRACT_SCRIPT_PATH.resolve()}")
         return pd.DataFrame()
 
-    st.info(f"最新の生産実績を取得しています ({start_date_str} ～ {end_date_str})...")
+    # --- 2. 外部スクリプトを実行してExcelを生成 ---
+    service_account_info = st.secrets["service_account"]
     
+    temp_file_path = None
     try:
-        command = [sys.executable, str(_EXTRACT_SCRIPT_PATH), start_date_str, end_date_str]
-        result = subprocess.run(
-            command, capture_output=True, text=True, encoding='utf-8', cwd=str(_EXTRACT_SCRIPT_DIR)
-        )
-        if result.returncode != 0:
-            st.error("生産実績の取得に失敗しました。")
-            st.text("---エラー詳細---")
-            if result.stderr:
-                st.code(result.stderr)
-            elif result.stdout: # stderrが空の場合、stdoutにエラーが出ている可能性も考慮
-                st.code(result.stdout)
-            else:
-                st.error("外部スクリプトはエラーコードを返しましたが、詳細なエラーメッセージがありませんでした。")
-                st.info("スクリプトの実行環境に問題がある可能性があります。")
-            return pd.DataFrame()
+        # 一時ファイルに認証情報を書き込む
+        # `delete=False` はWindowsで必要
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', dir=str(_EXTRACT_SCRIPT_DIR)) as temp_file:
+            json.dump(service_account_info, temp_file)
+            temp_file_path = temp_file.name
+        
+        st.info(f"最新の生産実績を取得しています ({start_date_str} ～ {end_date_str})...")
+        
+        try:
+            # コマンドに一時ファイルのパスを追加
+            command = [sys.executable, str(_EXTRACT_SCRIPT_PATH), start_date_str, end_date_str, temp_file_path]
+            result = subprocess.run(
+                command, capture_output=True, text=True, encoding='utf-8', cwd=str(_EXTRACT_SCRIPT_DIR)
+            )
+            if result.returncode != 0:
+                st.error("生産実績の取得に失敗しました。")
+                st.text("---エラー詳細---")
+                if result.stderr:
+                    st.code(result.stderr)
+                elif result.stdout:
+                    st.code(result.stdout)
+                else:
+                    st.error("外部スクリプトはエラーコードを返しましたが、詳細なエラーメッセージがありませんでした。")
+                return pd.DataFrame()
+        finally:
+            # 一時ファイルを確実に削除
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+
     except Exception as e:
-        st.error(f"実績取得スクリプトの実行中に予期せぬエラーが発生しました: {e}")
+        st.error(f"実績取得スクリプトの実行準備中に予期せぬエラーが発生しました: {e}")
+        # 一時ファイルが残っていたら削除
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
         return pd.DataFrame()
 
-    # --- 2. 生成されたExcelを読み込む ---
+    # --- 3. 生成されたExcelを読み込む ---
     if not _GENERATED_EXCEL_PATH.is_file():
         st.warning(f"生成されたExcelファイルが見つかりません: {_GENERATED_EXCEL_PATH}")
         return pd.DataFrame()
