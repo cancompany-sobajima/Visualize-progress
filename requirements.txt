@@ -5,3 +5,4 @@ unicodedata2
 gspread
 google-auth-oauthlib
 openpyxl
+firebase-admin
