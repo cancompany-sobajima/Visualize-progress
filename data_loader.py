@@ -121,7 +121,7 @@ def load_plan_data(date) -> pd.DataFrame:
 # --- パス定義 ---
 # スクリプトのあるディレクトリを基準にする
 _BASE_DIR = Path(__file__).parent.parent
-_EXTRACT_SCRIPT_DIR = _BASE_DIR / "生産レコードを抽出"
+_EXTRACT_SCRIPT_DIR = _APP_DIR / "record_exporter"
 _EXTRACT_SCRIPT_PATH = _EXTRACT_SCRIPT_DIR / "export_production_records.py"
 _GENERATED_EXCEL_PATH = _EXTRACT_SCRIPT_DIR / "production_records.xlsx"
 
