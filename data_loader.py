@@ -176,7 +176,7 @@ def load_results_data(date) -> pd.DataFrame:
     try:
         # 一時ファイルに認証情報を書き込む
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', dir=str(_EXTRACT_SCRIPT_DIR)) as temp_file:
-            json.dump(service_account_info, temp_file)
+            json.dump(dict(service_account_info), temp_file)
             temp_file_path = temp_file.name
         
         st.info(f"最新の生産実績を取得しています ({start_date_str} ～ {end_date_str})...")
