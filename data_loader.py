@@ -6,6 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import numpy as np
 import subprocess
+import tempfile
 import sys
 from datetime import timedelta
 
@@ -118,8 +119,8 @@ def load_plan_data(date) -> pd.DataFrame:
 
 
 # --- パス定義 ---
-# スクリプトのあるディレクトリを基準にする
-_BASE_DIR = Path(__file__).parent.parent
+# スクリプトのあるディレクトリ（＝アプリのルート）を基準にする
+_APP_DIR = Path(__file__).parent
 _EXTRACT_SCRIPT_DIR = _APP_DIR / "record_exporter"
 _EXTRACT_SCRIPT_PATH = _EXTRACT_SCRIPT_DIR / "export_production_records.py"
 _GENERATED_EXCEL_PATH = _EXTRACT_SCRIPT_DIR / "production_records.xlsx"
@@ -128,7 +129,7 @@ def load_results_data(date) -> pd.DataFrame:
     """
     外部スクリプトを実行してFirestoreから生産実績をExcelに抽出し、
     そのExcelファイルを読み込んで整形する。
-    認証情報は一時ファイル経経由で安全に渡す。
+    認証情報は一時ファイル経由で安全に渡す。
     """
     # --- 1. 日付設定とパスの検証 ---
     end_date = date
@@ -138,33 +139,6 @@ def load_results_data(date) -> pd.DataFrame:
 
     if not _EXTRACT_SCRIPT_PATH.is_file():
         st.error(f"実績取得スクリプトが見つかりません: {_EXTRACT_SCRIPT_PATH}")
-        
-        # --- デバッグ情報 ---
-        st.warning("デバッグ情報を表示します。")
-        
-        # 親ディレクトリの存在確認
-        parent_dir = _EXTRACT_SCRIPT_PATH.parent
-        st.info(f"スクリプトの親ディレクトリ: '{parent_dir}'")
-        st.info(f"親ディレクトリは存在しますか？ -> {parent_dir.exists()}")
-        st.info(f"親ディレクトリは 'ディレクトリ' ですか？ -> {parent_dir.is_dir()}")
-
-        # 親ディレクトリの中身をリストアップ
-        if parent_dir.exists() and parent_dir.is_dir():
-            try:
-                st.info(f"'{parent_dir}' の中身:")
-                st.code(str(os.listdir(parent_dir)))
-            except Exception as e:
-                st.error(f"ディレクトリの中身を取得中にエラー: {e}")
-
-        # アプリのルートディレクトリの中身もリストアップ
-        app_root = Path(__file__).parent
-        st.info(f"アプリのルートディレクトリ '{app_root}' の中身:")
-        try:
-            st.code(str(os.listdir(app_root)))
-        except Exception as e:
-            st.error(f"アプリルートの中身を取得中にエラー: {e}")
-        # --- デバッグ情報ここまで ---
-
         return pd.DataFrame()
 
     # --- 2. 外部スクリプトを実行してExcelを生成 ---
@@ -173,7 +147,6 @@ def load_results_data(date) -> pd.DataFrame:
     temp_file_path = None
     try:
         # 一時ファイルに認証情報を書き込む
-        # `delete=False` はWindowsで必要
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', dir=str(_EXTRACT_SCRIPT_DIR)) as temp_file:
             json.dump(service_account_info, temp_file)
             temp_file_path = temp_file.name
@@ -198,14 +171,14 @@ def load_results_data(date) -> pd.DataFrame:
                 return pd.DataFrame()
         finally:
             # 一時ファイルを確実に削除
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
+            if temp_file_path and Path(temp_file_path).exists():
+                Path(temp_file_path).unlink()
 
     except Exception as e:
         st.error(f"実績取得スクリプトの実行準備中に予期せぬエラーが発生しました: {e}")
         # 一時ファイルが残っていたら削除
-        if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        if temp_file_path and Path(temp_file_path).exists():
+            Path(temp_file_path).unlink()
         return pd.DataFrame()
 
     # --- 3. 生成されたExcelを読み込む ---
@@ -232,7 +205,7 @@ def load_results_data(date) -> pd.DataFrame:
         st.info(f"{date} の生産実績データはありません。")
         return pd.DataFrame()
 
-    # --- 3. データをアプリの形式に変換 ---
+    # --- 4. データをアプリの形式に変換 ---
     try:
         rename_map = {
             'line': '担当設備', 'customer': 'お客様名', 'product': '商品名',
