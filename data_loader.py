@@ -7,6 +7,7 @@ from google.oauth2.service_account import Credentials
 import numpy as np
 import subprocess
 import tempfile
+import os
 import sys
 from datetime import timedelta
 
@@ -139,6 +140,33 @@ def load_results_data(date) -> pd.DataFrame:
 
     if not _EXTRACT_SCRIPT_PATH.is_file():
         st.error(f"実績取得スクリプトが見つかりません: {_EXTRACT_SCRIPT_PATH}")
+        
+        # --- デバッグ情報 ---
+        st.warning("デバッグ情報を表示します。")
+        
+        # 親ディレクトリの存在確認
+        parent_dir = _EXTRACT_SCRIPT_PATH.parent
+        st.info(f"スクリプトの親ディレクトリ: '{parent_dir}'")
+        st.info(f"親ディレクトリは存在しますか？ -> {parent_dir.exists()}")
+        st.info(f"親ディレクトリは 'ディレクトリ' ですか？ -> {parent_dir.is_dir()}")
+
+        # 親ディレクトリの中身をリストアップ
+        if parent_dir.exists() and parent_dir.is_dir():
+            try:
+                st.info(f"'{parent_dir}' の中身:")
+                st.code(str(os.listdir(parent_dir)))
+            except Exception as e:
+                st.error(f"ディレクトリの中身を取得中にエラー: {e}")
+
+        # アプリのルートディレクトリの中身もリストアップ
+        app_root = Path(__file__).parent
+        st.info(f"アプリのルートディレクトリ '{app_root}' の中身:")
+        try:
+            st.code(str(os.listdir(app_root)))
+        except Exception as e:
+            st.error(f"アプリルートの中身を取得中にエラー: {e}")
+        # --- デバッグ情報ここまで ---
+
         return pd.DataFrame()
 
     # --- 2. 外部スクリプトを実行してExcelを生成 ---
