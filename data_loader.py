@@ -179,7 +179,7 @@ def load_results_data(date) -> pd.DataFrame:
             json.dump(dict(service_account_info), temp_file)
             temp_file_path = temp_file.name
         
-        st.info(f"最新の生産実績を取得しています ({start_date_str} ～ {end_date_str})...")
+        
         
         try:
             # コマンドに一時ファイルのパスを追加
