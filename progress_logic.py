@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
+import name_matching 
+
 from name_matching import apply_name_matching, get_name_similarity_score
 
 def create_progress_table(plan_df, results_df, master_df, name_master):
@@ -66,23 +68,34 @@ def _find_best_master_for_plan(plan_row, master_df):
     # ラインが一致するマスタ品目に候補を絞る
     candidate_masters = master_df[master_df['担当設備'] == plan_row['担当設備']]
 
+    # 予定の正規化済み商品名を取得 (元の予定商品名を使用)
+    normalized_plan_product = name_matching.normalize_text(plan_row['商品名'])
+
     for _, master_row in candidate_masters.iterrows():
         score = 0
-        # お客様名スコア (配点60)
-        cust_score = get_name_similarity_score(
-            master_row['お客様名'], plan_row['正規_お客様名'],
-            master_row['お客様名'], plan_row['お客様名']
-        )
-        score += (cust_score / 100) * 60
-
-        # 商品名スコア (配点40)
-        prod_score = get_name_similarity_score(
-            master_row['商品名'], plan_row['正規_商品名'],
-            master_row['商品名'], plan_row['商品名']
-        )
-        score += (prod_score / 100) * 40
         
-        if score > highest_score and score > 40: # 閾値: お客様名が部分一致(70*0.6=42)すれば候補
+        # 1. 正規化済み商品名の完全一致ボーナス (最優先)
+        normalized_master_product = name_matching.normalize_text(master_row['商品名'])
+        if normalized_plan_product == normalized_master_product:
+            score = 1000 # 非常に高いスコアを与え、最優先にする
+        else:
+            # 2. 通常のスコアリング (完全一致しない場合のみ)
+            # お客様名スコア (配点60)
+            cust_score = get_name_similarity_score(
+                master_row['お客様名'], plan_row['正規_お客様名'],
+                master_row['お客様名'], plan_row['お客様名']
+            )
+            score += (cust_score / 100) * 60
+
+            # 商品名スコア (配点40)
+            prod_score = get_name_similarity_score(
+                master_row['商品名'], plan_row['正規_商品名'],
+                master_row['商品名'], plan_row['商品名']
+            )
+            score += (prod_score / 100) * 40
+        
+        # 閾値: お客様名が部分一致(70*0.6=42)すれば候補
+        if score > highest_score and score > 40: 
             highest_score = score
             best_candidate_row = master_row
             
