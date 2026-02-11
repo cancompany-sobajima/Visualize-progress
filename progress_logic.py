@@ -126,7 +126,7 @@ def _find_best_master_for_plan(plan_row, master_df):
         
         # 顧客名が完全一致しない、かつ、部分一致のスコアが0より大きい場合
         if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
-           customer_match_score > 0:
+           customer_match_score > 0: # 0点より大きい部分一致
             partial_customer_candidates.append((master_row, customer_match_score)) # スコアも保持
 
     if partial_customer_candidates:
@@ -141,7 +141,7 @@ def _find_best_master_for_plan(plan_row, master_df):
                     highest_customer_score_for_exact_product = cust_score
                     best_match_in_partial_customer_exact_product = master_row
         
-        if best_match_in_partial_customer_exact_product:
+        if best_match_in_partial_customer_exact_product is not None: # Noneチェック
             # この段階で見つかったベストマッチを全体のベストマッチとして保持
             current_overall_score = highest_customer_score_for_exact_product + 100 # 顧客名スコアにボーナス
             if current_overall_score > highest_overall_score:
@@ -149,7 +149,7 @@ def _find_best_master_for_plan(plan_row, master_df):
                 final_best_match_row = best_match_in_partial_customer_exact_product
 
     # --- 優先度4: 顧客名 最も近しい部分一致 (スコア >= 0) & 商品名 最も近しい部分一致 (スコア >= 0) ---
-    if partial_customer_candidates:
+    if partial_customer_candidates: # 優先度3でフィルタリングした候補を再利用
         best_match_in_partial_customer_partial_product = None
         highest_combined_score = -1 # 顧客名スコアと商品名スコアの組み合わせ
 
@@ -157,20 +157,27 @@ def _find_best_master_for_plan(plan_row, master_df):
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
             current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
             
-            if current_product_score > 0:
+            if current_product_score > 0: # 商品名も有効な部分一致 (0点より大きい)
                 # 顧客名スコアと商品名スコアを組み合わせて評価
                 combined_score = cust_score + current_product_score # 単純な合計で比較
                 if combined_score > highest_combined_score:
                     highest_combined_score = combined_score
                     best_match_in_partial_customer_partial_product = master_row
         
-        if best_match_in_partial_customer_partial_product:
+        if best_match_in_partial_customer_partial_product is not None: # Noneチェック
             # この段階で見つかったベストマッチを全体のベストマッチとして保持
             if highest_combined_score > highest_overall_score:
                 highest_overall_score = highest_combined_score
                 final_best_match_row = best_match_in_partial_customer_partial_product
 
     # --- 最終的な結果を返す ---
+    # highest_overall_score が初期値の-1のままなら、有効なマッチが全くなかったことを意味する
+    # その場合でも、ユーザーの要望に従い、何らかの候補を返す必要がある
+    if final_best_match_row.empty and not candidate_masters_by_line.empty:
+        # どの優先度でもマッチしなかったが、ラインの候補はあった場合
+        # ユーザーの要望に従い、候補の中から最初のものを返す
+        return candidate_masters_by_line.iloc[0]
+    
     return final_best_match_row
 
 def _merge_plan_and_results(cleaned_plan_df, results_df):
