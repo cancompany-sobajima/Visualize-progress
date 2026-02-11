@@ -39,14 +39,10 @@ def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.Da
     all_debug_logs.append(f"DEBUG: --- create_progress_table finished ---")
     return final_df, all_debug_logs
 
-def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
+def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修正
     """予定表の各行を、商品マスタと照合し、お客様名・商品名をクリーンなものに更新する"""
-    debug_log = []
-    debug_log.append(f"\nDEBUG: --- _clean_plan_with_master ---")
-
     if plan_df.empty:
-        debug_log.append(f"DEBUG:   plan_df is empty.")
-        return pd.DataFrame(), debug_log
+        return pd.DataFrame()
 
     # まず、予定表の表記揺れを「振れ幅表(name_master)」で吸収する
     plan_df_matched = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
@@ -56,20 +52,20 @@ def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, l
         new_row = plan_row.to_dict()
         
         # この予定に最も一致するマスタ品目を探す
-        best_master_row, log_fbm = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
-        debug_log.extend(log_fbm)
+        best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
         
         if not best_master_row.empty: # pd.Series.empty で判定
             # マッチしたら、マスタの綺麗な名称で上書き
             new_row['お客様名'] = best_master_row['お客様名']
             new_row['商品名'] = best_master_row['商品名']
-            debug_log.append(f"DEBUG:   Cleaned plan row {idx}: Customer='{new_row['お客様名']}', Product='{new_row['商品名']}'")
         else:
-            debug_log.append(f"DEBUG:   No master match for plan row {idx}. Keeping original names.")
+            # マッチしなかった場合、商品マスタの名称を使用せず、「不明」とする
+            new_row['お客様名'] = "不明"
+            new_row['商品名'] = "不明"
         
         cleaned_rows.append(new_row)
         
-    return pd.DataFrame(cleaned_rows), debug_log
+    return pd.DataFrame(cleaned_rows)
 
 
 
