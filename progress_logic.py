@@ -77,12 +77,22 @@ def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]):
     debug_log = []
     debug_log.append(f"\nDEBUG: --- _find_best_master_for_plan for plan_row: {plan_row.get('お客様名', '')} - {plan_row.get('商品名', '')} ---")
 
-    best_candidate_row = pd.Series(dtype='object') # Noneではなく空のSeriesで初期化
-    highest_score = 0 # 全体で最も高いスコアを追跡
+    best_match_row = pd.Series(dtype='object') # Noneではなく空のSeriesで初期化
+
+    # 補助関数: 完全一致判定
+    def _is_exact_match(name1_norm, name2_norm):
+        return name1_norm == name2_norm
+
+    # 補助関数: 部分一致判定
+    def _is_partial_match(name1_norm, name2_norm):
+        return name1_norm in name2_norm or name2_norm in name1_norm
 
     # 1. ラインが一致するマスタ品目に候補を絞る
     candidate_masters_by_line = master_df[master_df['担当設備'] == plan_row['担当設備']]
     debug_log.append(f"DEBUG:   Candidates by line '{plan_row['担当設備']}': {len(candidate_masters_by_line)} rows")
+    if candidate_masters_by_line.empty:
+        debug_log.append(f"DEBUG:   No candidates found for line '{plan_row['担当設備']}'. Returning empty series.")
+        return best_match_row, debug_log # このラインの候補がない
 
     # 予定の正規化済みお客様名と商品名を取得
     normalized_plan_customer, log_npc = name_matching.normalize_text(plan_row['お客様名']) # normalize_text の戻り値に対応
@@ -90,82 +100,74 @@ def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]):
     normalized_plan_product, log_npp = name_matching.normalize_text(plan_row['商品名']) # normalize_text の戻り値に対応
     debug_log.extend(log_npp)
 
-    # --- フェーズ1: 顧客名が完全に一致する候補を探し、その中で商品名をスコアリング ---
+    # --- 優先度1: 顧客名 完全一致 & 商品名 完全一致 ---
+    debug_log.append(f"DEBUG:   Priority 1: Exact Customer & Exact Product Match")
+    for _, master_row in candidate_masters_by_line.iterrows():
+        normalized_master_customer, log_nmc = name_matching.normalize_text(master_row['お客様名']) # normalize_text の戻り値に対応
+        debug_log.extend(log_nmc)
+        normalized_master_product, log_nmp = name_matching.normalize_text(master_row['商品名']) # normalize_text の戻り値に対応
+        debug_log.extend(log_nmp)
+
+        if _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
+           _is_exact_match(normalized_plan_product, normalized_master_product):
+            debug_log.append(f"DEBUG:     P1 Match Found: '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}'")
+            return master_row, debug_log # 完璧な一致が見つかったら即座に返す
+
+    # --- 優先度2: 顧客名 完全一致 & 商品名 部分一致 ---
+    debug_log.append(f"DEBUG:   Priority 2: Exact Customer & Partial Product Match")
+    # 顧客名が完全一致する候補をフィルタリング
     exact_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer, log_nmc = name_matching.normalize_text(master_row['お客様名']) # normalize_text の戻り値に対応
         debug_log.extend(log_nmc)
-        if normalized_plan_customer == normalized_master_customer:
+        if _is_exact_match(normalized_plan_customer, normalized_master_customer):
             exact_customer_candidates.append(master_row)
-    debug_log.append(f"DEBUG:   Phase 1: Exact customer matches found: {len(exact_customer_candidates)} rows")
+    debug_log.append(f"DEBUG:     Exact customer candidates: {len(exact_customer_candidates)}")
 
     if exact_customer_candidates:
-        # 顧客名が完全に一致する候補が見つかった場合、その中で商品名をスコアリング
-        for master_row in exact_customer_candidates:
-            score_this_candidate = 0
+        # その中で商品名が部分一致するものを探す
+        for _, master_row in pd.DataFrame(exact_customer_candidates).iterrows():
             normalized_master_product, log_nmp = name_matching.normalize_text(master_row['商品名']) # normalize_text の戻り値に対応
             debug_log.extend(log_nmp)
+            if _is_partial_match(normalized_plan_product, normalized_master_product):
+                debug_log.append(f"DEBUG:     P2 Match Found: '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}'")
+                return master_row, debug_log # 見つかったら即座に返す (最初に見つかった部分一致)
 
-            if normalized_plan_product == normalized_master_product:
-                score_this_candidate = 1000 # 商品名も完全一致なら最高スコア
-                debug_log.append(f"DEBUG:     Exact Product Match (Phase 1): '{master_row['商品名']}' -> Score: {score_this_candidate}")
-            else:
-                # 顧客名が一致しているので、商品名のみでスコアリング (重み100%)
-                prod_score, log_ps = name_matching.get_name_similarity_score( # get_name_similarity_score の戻り値に対応
-                    master_name=master_row['商品名'],
-                    plan_master_name=plan_row['正規_商品名'],
-                    master_original=master_row['商品名'],
-                    plan_original=plan_row['商品名']
-                )
-                debug_log.extend(log_ps)
-                score_this_candidate = (prod_score / 100) * 100 # 商品名スコアをそのまま利用
-                debug_log.append(f"DEBUG:     Product Scoring (Phase 1): '{master_row['商品名']}' -> Score: {score_this_candidate}")
-
-            if score_this_candidate > highest_score:
-                highest_score = score_this_candidate
-                best_candidate_row = master_row
-        
-        # フェーズ1で有効なマッチが見つかった場合、ここで確定し、フェーズ2は実行しない
-        if highest_score > 0: # 顧客名一致かつ商品名マッチがあった場合
-            debug_log.append(f"DEBUG:   Phase 1 Best Match: '{best_candidate_row.get('お客様名', '')}' - '{best_candidate_row.get('商品名', '')}' with score {highest_score}")
-            return best_candidate_row, debug_log
-
-    # --- フェーズ2: 顧客名が完全に一致する候補が見つからない、またはフェーズ1で商品名がマッチしなかった場合 ---
-    debug_log.append(f"DEBUG:   Phase 2: Falling back to general scoring.")
-    # 従来通りの方法で、ラインが一致する全ての候補に対してスコアリング
-    # highest_score はフェーズ1で更新されている可能性があるので、それを引き継ぐ
+    # --- 優先度3: 顧客名 部分一致 & 商品名 完全一致 ---
+    debug_log.append(f"DEBUG:   Priority 3: Partial Customer & Exact Product Match")
+    # 顧客名が部分一致する候補をフィルタリング (ただし、完全一致は既に処理済み)
+    partial_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
-        score_this_candidate = 0
-        
-        # お客様名スコア (配点60)
-        cust_score, log_cs = name_matching.get_name_similarity_score( # get_name_similarity_score の戻り値に対応
-            master_name=master_row['お客様名'],
-            plan_master_name=plan_row['正規_お客様名'],
-            master_original=master_row['お客様名'],
-            plan_original=plan_row['お客様名']
-        )
-        debug_log.extend(log_cs)
-        score_this_candidate += (cust_score / 100) * 60
+        normalized_master_customer, log_nmc = name_matching.normalize_text(master_row['お客様名']) # normalize_text の戻り値に対応
+        debug_log.extend(log_nmc)
+        if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
+           _is_partial_match(normalized_plan_customer, normalized_master_customer):
+            partial_customer_candidates.append(master_row)
+    debug_log.append(f"DEBUG:     Partial customer candidates: {len(partial_customer_candidates)}")
 
-        # 商品名スコア (配点40)
-        prod_score, log_ps = name_matching.get_name_similarity_score( # get_name_similarity_score の戻り値に対応
-            master_name=master_row['商品名'],
-            plan_master_name=plan_row['正規_商品名'],
-            master_original=master_row['商品名'],
-            plan_original=plan_row['商品名']
-        )
-        debug_log.extend(log_ps)
-        score_this_candidate += (prod_score / 100) * 40
-        
-        debug_log.append(f"DEBUG:     Candidate (Phase 2): '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}' -> Cust Score: {cust_score}, Prod Score: {prod_score}, Total Score: {score_this_candidate}")
+    if partial_customer_candidates:
+        # その中で商品名が完全一致するものを探す
+        for _, master_row in pd.DataFrame(partial_customer_candidates).iterrows():
+            normalized_master_product, log_nmp = name_matching.normalize_text(master_row['商品名']) # normalize_text の戻り値に対応
+            debug_log.extend(log_nmp)
+            if _is_exact_match(normalized_plan_product, normalized_master_product):
+                debug_log.append(f"DEBUG:     P3 Match Found: '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}'")
+                return master_row, debug_log # 見つかったら即座に返す
 
-        # 閾値: お客様名が部分一致(70*0.6=42)すれば候補
-        if score_this_candidate > highest_score and score_this_candidate > 40:
-            highest_score = score_this_candidate
-            best_candidate_row = master_row
-            
-    debug_log.append(f"DEBUG:   Final Best Match: '{best_candidate_row.get('お客様名', '')}' - '{best_candidate_row.get('商品名', '')}' with score {highest_score}")
-    return best_candidate_row, debug_log
+    # --- 優先度4: 顧客名 部分一致 & 商品名 部分一致 ---
+    debug_log.append(f"DEBUG:   Priority 4: Partial Customer & Partial Product Match")
+    if partial_customer_candidates: # 優先度3でフィルタリングした候補を再利用
+        # その中で商品名が部分一致するものを探す
+        for _, master_row in pd.DataFrame(partial_customer_candidates).iterrows():
+            normalized_master_product, log_nmp = name_matching.normalize_text(master_row['商品名']) # normalize_text の戻り値に対応
+            debug_log.extend(log_nmp)
+            if _is_partial_match(normalized_plan_product, normalized_master_product):
+                debug_log.append(f"DEBUG:     P4 Match Found: '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}'")
+                return master_row, debug_log # 見つかったら即座に返す
+
+    # --- どの条件にも合致しない場合 ---
+    debug_log.append(f"DEBUG:   No match found. Returning empty series.")
+    return best_match_row, debug_log # 空のSeriesを返す
 
 def _merge_plan_and_results(cleaned_plan_df, results_df):
     """クリーンな予定表と実績表をマージする。日付も考慮する。"""
