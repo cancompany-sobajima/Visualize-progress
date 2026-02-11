@@ -61,42 +61,72 @@ def _clean_plan_with_master(plan_df, master_df, name_master):
     return pd.DataFrame(cleaned_rows)
 
 def _find_best_master_for_plan(plan_row, master_df):
-    """特定の予定に最も一致するマスタ品目を、スコアリングに基づいて見つける"""
     best_candidate_row = None
-    highest_score = 0
+    highest_score = 0 # 全体で最も高いスコアを追跡
 
-    # ラインが一致するマスタ品目に候補を絞る
-    candidate_masters = master_df[master_df['担当設備'] == plan_row['担当設備']]
+    # 1. ラインが一致するマスタ品目に候補を絞る
+    candidate_masters_by_line = master_df[master_df['担当設備'] == plan_row['担当設備']]
 
-    # 予定の正規化済み商品名を取得 (元の予定商品名を使用)
+    # 予定の正規化済みお客様名と商品名を取得
+    normalized_plan_customer = name_matching.normalize_text(plan_row['お客様名'])
     normalized_plan_product = name_matching.normalize_text(plan_row['商品名'])
 
-    for _, master_row in candidate_masters.iterrows():
-        score = 0
-        
-        # 1. 正規化済み商品名の完全一致ボーナス (最優先)
-        normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-        if normalized_plan_product == normalized_master_product:
-            score = 1000 # 非常に高いスコアを与え、最優先にする
-        else:
-            # 2. 通常のスコアリング (完全一致しない場合のみ)
-            # お客様名スコア (配点60)
-            cust_score = get_name_similarity_score(
-                master_row['お客様名'], plan_row['正規_お客様名'],
-                master_row['お客様名'], plan_row['お客様名']
-            )
-            score += (cust_score / 100) * 60
+    # --- フェーズ1: 顧客名が完全に一致する候補を探し、その中で商品名をスコアリング ---
+    # 顧客名が完全に一致する候補をフィルタリング
+    exact_customer_candidates = []
+    for _, master_row in candidate_masters_by_line.iterrows():
+        normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
+        if normalized_plan_customer == normalized_master_customer:
+            exact_customer_candidates.append(master_row)
 
-            # 商品名スコア (配点40)
-            prod_score = get_name_similarity_score(
-                master_row['商品名'], plan_row['正規_商品名'],
-                master_row['商品名'], plan_row['商品名']
-            )
-            score += (prod_score / 100) * 40
+    if exact_customer_candidates:
+        # 顧客名が完全に一致する候補が見つかった場合、その中で商品名をスコアリング
+        for master_row in exact_customer_candidates:
+            score_this_candidate = 0
+            normalized_master_product = name_matching.normalize_text(master_row['商品名'])
+
+            if normalized_plan_product == normalized_master_product:
+                score_this_candidate = 1000 # 商品名も完全一致なら最高スコア
+            else:
+                # 顧客名が一致しているので、商品名のみでスコアリング (重み100%)
+                prod_score = name_matching.get_name_similarity_score(
+                    master_row['商品名'], plan_row['正規_商品名'],
+                    master_row['商品名'], plan_row['商品名']
+                )
+                score_this_candidate = (prod_score / 100) * 100 # 商品名スコアをそのまま利用
+
+            if score_this_candidate > highest_score:
+                highest_score = score_this_candidate
+                best_candidate_row = master_row
+        
+        # フェーズ1で有効なマッチが見つかった場合、ここで確定し、フェーズ2は実行しない
+        # (highest_score > 0 は、少なくとも何らかの商品名マッチがあったことを意味する)
+        if highest_score > 0: # 顧客名一致かつ商品名マッチがあった場合
+            return best_candidate_row
+
+    # --- フェーズ2: 顧客名が完全に一致する候補が見つからない、またはフェーズ1で商品名がマッチしなかった場合 ---
+    # 従来通りの方法で、ラインが一致する全ての候補に対してスコアリング
+    # highest_score はフェーズ1で更新されている可能性があるので、それを引き継ぐ
+    for _, master_row in candidate_masters_by_line.iterrows():
+        score_this_candidate = 0
+        
+        # お客様名スコア (配点60)
+        cust_score = get_name_similarity_score(
+            master_row['お客様名'], plan_row['正規_お客様名'],
+            master_row['お客様名'], plan_row['お客様名']
+        )
+        score_this_candidate += (cust_score / 100) * 60
+
+        # 商品名スコア (配点40)
+        prod_score = get_name_similarity_score(
+            master_row['商品名'], plan_row['正規_商品名'],
+            master_row['商品名'], plan_row['商品名']
+        )
+        score_this_candidate += (prod_score / 100) * 40
         
         # 閾値: お客様名が部分一致(70*0.6=42)すれば候補
-        if score > highest_score and score > 40: 
-            highest_score = score
+        if score_this_candidate > highest_score and score_this_candidate > 40:
+            highest_score = score_this_candidate
             best_candidate_row = master_row
             
     return best_candidate_row
