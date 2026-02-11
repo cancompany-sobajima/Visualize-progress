@@ -73,7 +73,8 @@ def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]): #
     debug_log = []
     debug_log.append(f"\nDEBUG: --- _find_best_master_for_plan for plan_row: {plan_row.get('お客様名', '')} - {plan_row.get('商品名', '')} ---")
 
-    best_match_row = pd.Series(dtype='object')
+    final_best_match_row = pd.Series(dtype='object')
+    highest_overall_score = -1 # 全体で最も高いスコアを追跡
 
     # 補助関数: 完全一致判定
     def _is_exact_match(name1_norm, name2_norm):
@@ -84,74 +85,116 @@ def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]): #
     debug_log.append(f"DEBUG:   Candidates by line '{plan_row['担当設備']}': {len(candidate_masters_by_line)} rows")
     if candidate_masters_by_line.empty:
         debug_log.append(f"DEBUG:   No candidates found for line '{plan_row['担当設備']}'. Returning empty series.")
-        return best_match_row, debug_log # このラインの候補がない
+        return final_best_match_row, debug_log # このラインの候補がない
 
     # 予定の正規化済みお客様名と商品名を取得
     normalized_plan_customer = name_matching.normalize_text(plan_row['お客様名'])
     normalized_plan_product = name_matching.normalize_text(plan_row['商品名'])
     debug_log.append(f"DEBUG:   Normalized Plan Customer: '{normalized_plan_customer}', Product: '{normalized_plan_product}'")
 
-    # --- 優先度1: 顧客名 完全一致 ---
+    # --- 優先度1: 顧客名 完全一致 & 商品名 完全一致 ---
+    for _, master_row in candidate_masters_by_line.iterrows():
+        normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
+        normalized_master_product = name_matching.normalize_text(master_row['商品名'])
+
+        if _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
+           _is_exact_match(normalized_plan_product, normalized_master_product):
+            debug_log.append(f"DEBUG:   Phase 1 Best Match (Exact Customer & Product): '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}'")
+            return master_row, debug_log # 完璧な一致が見つかったら即座に返す (最高優先度)
+
+    # --- 優先度2: 顧客名 完全一致 & 商品名 最も近しい部分一致 (スコア >= 80) ---
     exact_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
         if _is_exact_match(normalized_plan_customer, normalized_master_customer):
             exact_customer_candidates.append(master_row)
-    debug_log.append(f"DEBUG:   Phase 1: Exact customer matches found: {len(exact_customer_candidates)} rows")
+    debug_log.append(f"DEBUG:   Phase 2: Exact customer matches found: {len(exact_customer_candidates)} rows")
 
     if exact_customer_candidates:
-        # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
         best_product_match_in_exact_customer = None
-        highest_product_score = -1 # スコアは0以上なので-1で初期化
+        highest_product_score = -1
 
         for _, master_row in pd.DataFrame(exact_customer_candidates).iterrows():
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-            
             current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
-            debug_log.append(f"DEBUG:     Exact Customer Candidate: '{master_row['お客様名']}' - '{master_row['商品名']}' (Normalized: '{normalized_master_product}') -> Product Score: {current_product_score}")
-
+            debug_log.append(f"DEBUG:     Exact Customer Candidate: '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}' (Normalized: '{normalized_master_product}') -> Product Score: {current_product_score}")
+            
             if current_product_score > highest_product_score:
                 highest_product_score = current_product_score
                 best_product_match_in_exact_customer = master_row
         
-        # 顧客名完全一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
-        if highest_product_score >= 80: # get_match_score の部分一致は最低85点なので、80点以上で有効と判断
-            debug_log.append(f"DEBUG:   Phase 1 Best Match: '{best_product_match_in_exact_customer.get('お客様名', '')}' - '{best_product_match_in_exact_customer.get('商品名', '')}' with score {highest_product_score}")
-            return best_product_match_in_exact_customer, debug_log
+        if highest_product_score >= 80:
+            debug_log.append(f"DEBUG:   Phase 2 Best Match: '{best_product_match_in_exact_customer.get('お客様名', '')}' - '{best_product_match_in_exact_customer.get('商品名', '')}' with score {highest_product_score}")
+            # この段階で見つかったベストマッチを全体のベストマッチとして保持
+            # ここではreturnしない。次の優先度も考慮する。
+            # ただし、この優先度で見つかったマッチは、次の優先度よりも高いので、
+            # highest_overall_scoreを更新し、final_best_match_rowをセットする
+            if highest_product_score + 100 > highest_overall_score: # 顧客名完全一致なので、高いスコアを付与
+                highest_overall_score = highest_product_score + 100 # ボーナス点
+                final_best_match_row = best_product_match_in_exact_customer
 
-    # --- 優先度2: 顧客名 部分一致 ---
-    # 顧客名が部分一致する候補をフィルタリング (ただし、完全一致は既に処理済み)
+    # --- 優先度3: 顧客名 最も近しい部分一致 (スコア >= 80) & 商品名 完全一致 ---
     partial_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
+        customer_match_score = name_matching.get_match_score(normalized_plan_customer, normalized_master_customer)
+        
         if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
-           name_matching.get_match_score(normalized_plan_customer, normalized_master_customer) >= 80: # 部分一致もスコアで判定
-            partial_customer_candidates.append(master_row)
-    debug_log.append(f"DEBUG:   Phase 2: Partial customer matches found: {len(partial_customer_candidates)} rows")
+           customer_match_score >= 80:
+            partial_customer_candidates.append((master_row, customer_match_score)) # スコアも保持
+    debug_log.append(f"DEBUG:   Phase 3: Partial customer matches found: {len(partial_customer_candidates)} rows")
 
     if partial_customer_candidates:
-        # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
-        best_product_match_in_partial_customer = None
-        highest_product_score = -1
+        best_match_in_partial_customer_exact_product = None
+        highest_customer_score_for_exact_product = -1 # 顧客名スコアでソートするため
 
-        for _, master_row in pd.DataFrame(partial_customer_candidates).iterrows():
+        for master_row, cust_score in partial_customer_candidates:
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-            
-            current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
-            debug_log.append(f"DEBUG:     Partial Customer Candidate: '{master_row['お客様名']}' - '{master_row['商品名']}' (Normalized: '{normalized_master_product}') -> Product Score: {current_product_score}")
-
-            if current_product_score > highest_product_score:
-                highest_product_score = current_product_score
-                best_product_match_in_partial_customer = master_row
+            if _is_exact_match(normalized_plan_product, normalized_master_product):
+                debug_log.append(f"DEBUG:     Partial Customer Candidate (Exact Product): '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}' (Normalized: '{normalized_master_product}') -> Customer Score: {cust_score}")
+                # 顧客名部分一致 + 商品名完全一致の場合、顧客名スコアを優先
+                if cust_score > highest_customer_score_for_exact_product:
+                    highest_customer_score_for_exact_product = cust_score
+                    best_match_in_partial_customer_exact_product = master_row
         
-        # 顧客名部分一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
-        if highest_product_score >= 80:
-            debug_log.append(f"DEBUG:   Phase 2 Best Match: '{best_product_match_in_partial_customer.get('お客様名', '')}' - '{best_product_match_in_partial_customer.get('商品名', '')}' with score {highest_product_score}")
-            return best_product_match_in_partial_customer, debug_log
+        if best_match_in_partial_customer_exact_product:
+            debug_log.append(f"DEBUG:   Phase 3 Best Match: '{best_match_in_partial_customer_exact_product.get('お客様名', '')}' - '{best_match_in_partial_customer_exact_product.get('商品名', '')}' with customer score {highest_customer_score_for_exact_product}")
+            # この段階で見つかったベストマッチを全体のベストマッチとして保持
+            current_overall_score = highest_customer_score_for_exact_product + 50 # 顧客名スコアにボーナス
+            if current_overall_score > highest_overall_score:
+                highest_overall_score = current_overall_score
+                final_best_match_row = best_match_in_partial_customer_exact_product
 
-    # --- どの条件にも合致しない場合 ---
-    debug_log.append(f"DEBUG:   No match found. Returning empty series.")
-    return best_match_row, debug_log
+    # --- 優先度4: 顧客名 最も近しい部分一致 (スコア >= 80) & 商品名 最も近しい部分一致 (スコア >= 80) ---
+    if partial_customer_candidates: # 優先度3でフィルタリングした候補を再利用
+        best_match_in_partial_customer_partial_product = None
+        highest_combined_score = -1 # 顧客名スコアと商品名スコアの組み合わせ
+
+        for master_row, cust_score in partial_customer_candidates:
+            normalized_master_product = name_matching.normalize_text(master_row['商品名'])
+            current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
+            
+            if current_product_score >= 80: # 商品名も有効な部分一致
+                debug_log.append(f"DEBUG:     Partial Customer Candidate (Partial Product): '{master_row.get('お客様名', '')}' - '{master_row.get('商品名', '')}' (Normalized: '{normalized_master_product}') -> Customer Score: {cust_score}, Product Score: {current_product_score}")
+                # 顧客名スコアと商品名スコアを組み合わせて評価
+                combined_score = cust_score + current_product_score # 単純な合計で比較
+                if combined_score > highest_combined_score:
+                    highest_combined_score = combined_score
+                    best_match_in_partial_customer_partial_product = master_row
+        
+        if best_match_in_partial_customer_partial_product:
+            debug_log.append(f"DEBUG:   Phase 4 Best Match: '{best_match_in_partial_customer_partial_product.get('お客様名', '')}' - '{best_match_in_partial_customer_partial_product.get('商品名', '')}' with combined score {highest_combined_score}")
+            # この段階で見つかったベストマッチを全体のベストマッチとして保持
+            if highest_combined_score > highest_overall_score:
+                highest_overall_score = highest_combined_score
+                final_best_match_row = best_match_in_partial_customer_partial_product
+
+    # --- 最終的な結果を返す ---
+    if final_best_match_row.empty:
+        debug_log.append(f"DEBUG:   No match found. Returning empty series.")
+    else:
+        debug_log.append(f"DEBUG:   Final Best Match: '{final_best_match_row.get('お客様名', '')}' - '{final_best_match_row.get('商品名', '')}' with overall score {highest_overall_score}")
+    return final_best_match_row, debug_log
 
 def _merge_plan_and_results(cleaned_plan_df, results_df):
     """クリーンな予定表と実績表をマージする。日付も考慮する。"""
