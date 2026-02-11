@@ -90,7 +90,7 @@ def _find_best_master_for_plan(plan_row, master_df):
            _is_exact_match(normalized_plan_product, normalized_master_product):
             return master_row # 完璧な一致が見つかったら即座に返す (最高優先度)
 
-    # --- 優先度2: 顧客名 完全一致 & 商品名 最も近しい部分一致 (スコア >= 80) ---
+    # --- 優先度2: 顧客名 完全一致 & 商品名 最も近しい部分一致 ---
     exact_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
@@ -109,23 +109,24 @@ def _find_best_master_for_plan(plan_row, master_df):
                 highest_product_score = current_product_score
                 best_product_match_in_exact_customer = master_row
         
-        if highest_product_score >= 80:
-            # この段階で見つかったベストマッチを全体のベストマッチとして保持
-            # ここではreturnしない。次の優先度も考慮する。
-            # ただし、この優先度で見つかったマッチは、次の優先度よりも高いので、
+        if best_product_match_in_exact_customer is not None:
+            # この優先度で見つかったマッチは、次の優先度よりも高いので、
             # highest_overall_scoreを更新し、final_best_match_rowをセットする
-            if highest_product_score + 100 > highest_overall_score: # 顧客名完全一致なので、高いスコアを付与
-                highest_overall_score = highest_product_score + 100 # ボーナス点
+            # ここではスコアにボーナスを付与して、他の優先度との比較で優位にする
+            current_overall_score = highest_product_score + 200 # 顧客名完全一致なので、高いボーナス
+            if current_overall_score > highest_overall_score:
+                highest_overall_score = current_overall_score
                 final_best_match_row = best_product_match_in_exact_customer
 
-    # --- 優先度3: 顧客名 最も近しい部分一致 (スコア >= 80) & 商品名 完全一致 ---
+    # --- 優先度3: 顧客名 最も近しい部分一致 (スコア >= 0) & 商品名 完全一致 ---
     partial_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
         customer_match_score = name_matching.get_match_score(normalized_plan_customer, normalized_master_customer)
         
+        # 顧客名が完全一致しない、かつ、部分一致のスコアが0より大きい場合
         if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
-           customer_match_score >= 80:
+           customer_match_score > 0:
             partial_customer_candidates.append((master_row, customer_match_score)) # スコアも保持
 
     if partial_customer_candidates:
@@ -142,13 +143,13 @@ def _find_best_master_for_plan(plan_row, master_df):
         
         if best_match_in_partial_customer_exact_product:
             # この段階で見つかったベストマッチを全体のベストマッチとして保持
-            current_overall_score = highest_customer_score_for_exact_product + 50 # 顧客名スコアにボーナス
+            current_overall_score = highest_customer_score_for_exact_product + 100 # 顧客名スコアにボーナス
             if current_overall_score > highest_overall_score:
                 highest_overall_score = current_overall_score
                 final_best_match_row = best_match_in_partial_customer_exact_product
 
-    # --- 優先度4: 顧客名 最も近しい部分一致 (スコア >= 80) & 商品名 最も近しい部分一致 (スコア >= 80) ---
-    if partial_customer_candidates: # 優先度3でフィルタリングした候補を再利用
+    # --- 優先度4: 顧客名 最も近しい部分一致 (スコア >= 0) & 商品名 最も近しい部分一致 (スコア >= 0) ---
+    if partial_customer_candidates:
         best_match_in_partial_customer_partial_product = None
         highest_combined_score = -1 # 顧客名スコアと商品名スコアの組み合わせ
 
@@ -156,7 +157,7 @@ def _find_best_master_for_plan(plan_row, master_df):
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
             current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
             
-            if current_product_score >= 80: # 商品名も有効な部分一致
+            if current_product_score > 0:
                 # 顧客名スコアと商品名スコアを組み合わせて評価
                 combined_score = cust_score + current_product_score # 単純な合計で比較
                 if combined_score > highest_combined_score:
