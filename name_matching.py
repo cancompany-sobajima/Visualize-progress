@@ -1,20 +1,17 @@
 import re
 import unicodedata
 import pandas as pd
-import streamlit as st
 
 def normalize_text(text: str) -> str:
     """テキストを正規化する（全角→半角、大文字→小文字、記号除去）。"""
     if not isinstance(text, str):
         return ""
-    original_text = text # Store original for debug print
     # 全角を半角に
     text = unicodedata.normalize('NFKC', text)
     # 小文字に統一
     text = text.lower()
     # 一般的な記号や空白を削除
     text = re.sub(r'[\s\-,.()\[\]株式会社]', '', text)
-    st.write(f"DEBUG: normalize_text('{original_text}') -> '{text}'") # Debug print
     return text
 
 def find_best_match(name: str, master_dict: dict) -> (str, int):
@@ -77,20 +74,12 @@ def get_name_similarity_score(master_name: str, plan_master_name: str, master_or
     - 元名称どうしが部分一致: 70点
     - それ以外: 0点
     """
-    st.write(f"\nDEBUG: --- get_name_similarity_score ---")
-    st.write(f"DEBUG:   master_name: '{master_name}'")
-    st.write(f"DEBUG:   plan_master_name: '{plan_master_name}'")
-    st.write(f"DEBUG:   master_original: '{master_original}'")
-    st.write(f"DEBUG:   plan_original: '{plan_original}'")
-
     # 予定の名寄せ後とマスタ名が完全一致
     if plan_master_name and plan_master_name == master_name:
-        st.write(f"DEBUG:   Condition: plan_master_name == master_name -> Score: 100")
         return 100
     
     # 予定の名寄せ後とマスタ名が部分一致
     if plan_master_name and (plan_master_name in master_name or master_name in plan_master_name):
-        st.write(f"DEBUG:   Condition: plan_master_name partial match -> Score: 80")
         return 80
 
     # 元名称どうしで部分一致
@@ -98,14 +87,11 @@ def get_name_similarity_score(master_name: str, plan_master_name: str, master_or
     norm_plan_original = normalize_text(plan_original)
 
     if not norm_master_original or not norm_plan_original:
-        st.write(f"DEBUG:   Condition: normalized originals empty -> Score: 0")
         return 0
 
     if norm_master_original in norm_plan_original or norm_plan_original in norm_master_original:
-        st.write(f"DEBUG:   Condition: normalized originals partial match -> Score: 70")
         return 70
     
-st.write(f"DEBUG:   Condition: No match -> Score: 0")
     return 0
 
 def apply_name_matching(df: pd.DataFrame, master: dict) -> pd.DataFrame:
