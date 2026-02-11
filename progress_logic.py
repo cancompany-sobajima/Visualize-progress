@@ -5,7 +5,7 @@ from datetime import datetime
 
 import name_matching 
 
-from name_matching import apply_name_matching, get_name_similarity_score
+from name_matching import apply_name_matching, get_name_similarity_score, get_match_score
 
 def create_progress_table(plan_df, results_df, master_df, name_master):
     """
@@ -59,11 +59,7 @@ def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修�
     return pd.DataFrame(cleaned_rows)
 
 def _find_best_master_for_plan(plan_row, master_df):
-    """特定の予定に最も一致するマスタ品目を、スコアリングに基づいて見つける"""
-    debug_log = []
-    debug_log.append(f"\nDEBUG: --- _find_best_master_for_plan for plan_row: {plan_row.get('お客様名', '')} - {plan_row.get('商品名', '')} ---")
-
-    best_match_row = pd.Series(dtype='object') # Noneではなく空のSeriesで初期化
+    best_match_row = pd.Series(dtype='object')
 
     # 補助関数: 完全一致判定
     def _is_exact_match(name1_norm, name2_norm):
@@ -75,26 +71,14 @@ def _find_best_master_for_plan(plan_row, master_df):
 
     # 1. ラインが一致するマスタ品目に候補を絞る
     candidate_masters_by_line = master_df[master_df['担当設備'] == plan_row['担当設備']]
-    debug_log.append(f"DEBUG:   Candidates by line '{plan_row['担当設備']}': {len(candidate_masters_by_line)} rows")
     if candidate_masters_by_line.empty:
-        debug_log.append(f"DEBUG:   No candidates found for line '{plan_row['担当設備']}'. Returning empty series.")
-        return best_match_row, debug_log # このラインの候補がない
+        return best_match_row # このラインの候補がない
 
     # 予定の正規化済みお客様名と商品名を取得
     normalized_plan_customer = name_matching.normalize_text(plan_row['お客様名'])
     normalized_plan_product = name_matching.normalize_text(plan_row['商品名'])
 
-    # --- 優先度1: 顧客名 完全一致 & 商品名 完全一致 ---
-    for _, master_row in candidate_masters_by_line.iterrows():
-        normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
-        normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-
-        if _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
-           _is_exact_match(normalized_plan_product, normalized_master_product):
-            return master_row # 完璧な一致が見つかったら即座に返す
-
-    # --- 優先度2: 顧客名 完全一致 & 商品名 部分一致 ---
-    # 顧客名が完全一致する候補をフィルタリング
+    # --- 優先度1: 顧客名 完全一致 ---
     exact_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
@@ -102,35 +86,49 @@ def _find_best_master_for_plan(plan_row, master_df):
             exact_customer_candidates.append(master_row)
 
     if exact_customer_candidates:
-        # その中で商品名が部分一致するものを探す
+        # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
+        best_product_match_in_exact_customer = None
+        highest_product_score = -1 # スコアは0以上なので-1で初期化
+
         for _, master_row in pd.DataFrame(exact_customer_candidates).iterrows():
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-            if _is_partial_match(normalized_plan_product, normalized_master_product):
-                return master_row # 見つかったら即座に返す (最初に見つかった部分一致)
+            
+            current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
+            
+            if current_product_score > highest_product_score:
+                highest_product_score = current_product_score
+                best_product_match_in_exact_customer = master_row
+        
+        # 顧客名完全一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
+        if highest_product_score >= 80: # get_match_score の部分一致は最低85点なので、80点以上で有効と判断
+            return best_product_match_in_exact_customer
 
-    # --- 優先度3: 顧客名 部分一致 & 商品名 完全一致 ---
+    # --- 優先度2: 顧客名 部分一致 ---
     # 顧客名が部分一致する候補をフィルタリング (ただし、完全一致は既に処理済み)
     partial_customer_candidates = []
     for _, master_row in candidate_masters_by_line.iterrows():
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
         if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
-           _is_partial_match(normalized_plan_customer, normalized_master_customer):
+           name_matching.get_match_score(normalized_plan_customer, normalized_master_customer) >= 80: # 部分一致もスコアで判定
             partial_customer_candidates.append(master_row)
 
     if partial_customer_candidates:
-        # その中で商品名が完全一致するものを探す
-        for _, master_row in pd.DataFrame(partial_customer_candidates).iterrows():
-            normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-            if _is_exact_match(normalized_plan_product, normalized_master_product):
-                return master_row # 見つかったら即座に返す
+        # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
+        best_product_match_in_partial_customer = None
+        highest_product_score = -1
 
-    # --- 優先度4: 顧客名 部分一致 & 商品名 部分一致 ---
-    if partial_customer_candidates: # 優先度3でフィルタリングした候補を再利用
-        # その中で商品名が部分一致するものを探す
         for _, master_row in pd.DataFrame(partial_customer_candidates).iterrows():
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
-            if _is_partial_match(normalized_plan_product, normalized_master_product):
-                return master_row # 見つかったら即座に返す
+            
+            current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
+            
+            if current_product_score > highest_product_score:
+                highest_product_score = current_product_score
+                best_product_match_in_partial_customer = master_row
+        
+        # 顧客名部分一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
+        if highest_product_score >= 80:
+            return best_product_match_in_partial_customer
 
     # --- どの条件にも合致しない場合 ---
     return best_match_row
