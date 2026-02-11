@@ -46,17 +46,22 @@ def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修�
     for idx, plan_row in plan_df_matched.iterrows():
         new_row = plan_row.to_dict()
         
-        # この予定に最も一致するマスタ品目を探す
-        best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
-        
-        if not best_master_row.empty: # pd.Series.empty で判定
-            # マッチしたら、マスタの綺麗な名称で上書き
-            new_row['お客様名'] = best_master_row['お客様名']
-            new_row['商品名'] = best_master_row['商品名']
+        # 「型替え」の場合は照合をスキップし、そのまま「型替え」として扱う
+        if new_row.get('商品名') == '型替え':
+            new_row['お客様名'] = new_row.get('お客様名', '') # お客様名は元の計画データを維持
+            new_row['商品名'] = '型替え'
         else:
-            # マッチしなかった場合、商品マスタの名称を使用せず、「不明」とする
-            new_row['お客様名'] = "不明"
-            new_row['商品名'] = "不明"
+            # この予定に最も一致するマスタ品目を探す
+            best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
+            
+            if not best_master_row.empty: # pd.Series.empty で判定
+                # マッチしたら、マスタの綺麗な名称で上書き
+                new_row['お客様名'] = best_master_row['お客様名']
+                new_row['商品名'] = best_master_row['商品名']
+            else:
+                # マッチしなかった場合、商品マスタの名称を使用せず、「不明」とする
+                new_row['お客様名'] = "不明"
+                new_row['商品名'] = "不明"
         
         cleaned_rows.append(new_row)
         
