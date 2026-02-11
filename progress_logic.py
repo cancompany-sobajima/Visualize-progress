@@ -7,16 +7,20 @@ import name_matching
 
 from name_matching import apply_name_matching, get_name_similarity_score, get_match_score
 
-def create_progress_table(plan_df, results_df, master_df, name_master):
+def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
     """
     新しいメインロジック：
     1. 予定表の名称を商品マスタでクリーンナップ
     2. クリーンになった予定表と実績表を突合
     """
-    # 1. 予定表の名称を商品マスタを使いクリーンナップ
-    cleaned_plan_df = _clean_plan_with_master(plan_df, master_df, name_master)
+    all_debug_logs = []
+    all_debug_logs.append(f"\nDEBUG: --- create_progress_table ---")
 
-    # 2. 名称がクリーンになった予定表と実績表を突合
+    # 1. 予定表の名称を商品マスタを使いクリーンナップ
+    cleaned_plan_df, log_cpm = _clean_plan_with_master(plan_df, master_df, name_master) # _clean_plan_with_master の戻り値に対応
+    all_debug_logs.extend(log_cpm)
+
+    # 2. クリーンになった予定表と実績表を突合
     final_df = _merge_plan_and_results(cleaned_plan_df, results_df)
     
     # 3. 差異と進捗状態を計算
@@ -32,12 +36,17 @@ def create_progress_table(plan_df, results_df, master_df, name_master):
         
         final_df = final_df[is_unplanned_but_valid | is_planned_and_valid]
 
-    return final_df
+    all_debug_logs.append(f"DEBUG: --- create_progress_table finished ---")
+    return final_df, all_debug_logs
 
-def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修正
+def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
     """予定表の各行を、商品マスタと照合し、お客様名・商品名をクリーンなものに更新する"""
+    debug_log = []
+    debug_log.append(f"\nDEBUG: --- _clean_plan_with_master ---")
+
     if plan_df.empty:
-        return pd.DataFrame()
+        debug_log.append(f"DEBUG:   plan_df is empty.")
+        return pd.DataFrame(), debug_log
 
     # まず、予定表の表記揺れを「振れ幅表(name_master)」で吸収する
     plan_df_matched = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
@@ -47,36 +56,44 @@ def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修�
         new_row = plan_row.to_dict()
         
         # この予定に最も一致するマスタ品目を探す
-        best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
+        best_master_row, log_fbm = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
+        debug_log.extend(log_fbm)
         
         if not best_master_row.empty: # pd.Series.empty で判定
             # マッチしたら、マスタの綺麗な名称で上書き
             new_row['お客様名'] = best_master_row['お客様名']
             new_row['商品名'] = best_master_row['商品名']
+            debug_log.append(f"DEBUG:   Cleaned plan row {idx}: Customer='{new_row['お客様名']}', Product='{new_row['商品名']}'")
+        else:
+            debug_log.append(f"DEBUG:   No master match for plan row {idx}. Keeping original names.")
         
         cleaned_rows.append(new_row)
         
-    return pd.DataFrame(cleaned_rows)
+    return pd.DataFrame(cleaned_rows), debug_log
 
-def _find_best_master_for_plan(plan_row, master_df):
+
+
+def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]): # 戻り値の型を修正
+    debug_log = []
+    debug_log.append(f"\nDEBUG: --- _find_best_master_for_plan for plan_row: {plan_row.get('お客様名', '')} - {plan_row.get('商品名', '')} ---")
+
     best_match_row = pd.Series(dtype='object')
 
     # 補助関数: 完全一致判定
     def _is_exact_match(name1_norm, name2_norm):
         return name1_norm == name2_norm
 
-    # 補助関数: 部分一致判定
-    def _is_partial_match(name1_norm, name2_norm):
-        return name1_norm in name2_norm or name2_norm in name1_norm
-
     # 1. ラインが一致するマスタ品目に候補を絞る
     candidate_masters_by_line = master_df[master_df['担当設備'] == plan_row['担当設備']]
+    debug_log.append(f"DEBUG:   Candidates by line '{plan_row['担当設備']}': {len(candidate_masters_by_line)} rows")
     if candidate_masters_by_line.empty:
-        return best_match_row # このラインの候補がない
+        debug_log.append(f"DEBUG:   No candidates found for line '{plan_row['担当設備']}'. Returning empty series.")
+        return best_match_row, debug_log # このラインの候補がない
 
     # 予定の正規化済みお客様名と商品名を取得
     normalized_plan_customer = name_matching.normalize_text(plan_row['お客様名'])
     normalized_plan_product = name_matching.normalize_text(plan_row['商品名'])
+    debug_log.append(f"DEBUG:   Normalized Plan Customer: '{normalized_plan_customer}', Product: '{normalized_plan_product}'")
 
     # --- 優先度1: 顧客名 完全一致 ---
     exact_customer_candidates = []
@@ -84,6 +101,7 @@ def _find_best_master_for_plan(plan_row, master_df):
         normalized_master_customer = name_matching.normalize_text(master_row['お客様名'])
         if _is_exact_match(normalized_plan_customer, normalized_master_customer):
             exact_customer_candidates.append(master_row)
+    debug_log.append(f"DEBUG:   Phase 1: Exact customer matches found: {len(exact_customer_candidates)} rows")
 
     if exact_customer_candidates:
         # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
@@ -94,14 +112,16 @@ def _find_best_master_for_plan(plan_row, master_df):
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
             
             current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
-            
+            debug_log.append(f"DEBUG:     Exact Customer Candidate: '{master_row['お客様名']}' - '{master_row['商品名']}' (Normalized: '{normalized_master_product}') -> Product Score: {current_product_score}")
+
             if current_product_score > highest_product_score:
                 highest_product_score = current_product_score
                 best_product_match_in_exact_customer = master_row
         
         # 顧客名完全一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
         if highest_product_score >= 80: # get_match_score の部分一致は最低85点なので、80点以上で有効と判断
-            return best_product_match_in_exact_customer
+            debug_log.append(f"DEBUG:   Phase 1 Best Match: '{best_product_match_in_exact_customer.get('お客様名', '')}' - '{best_product_match_in_exact_customer.get('商品名', '')}' with score {highest_product_score}")
+            return best_product_match_in_exact_customer, debug_log
 
     # --- 優先度2: 顧客名 部分一致 ---
     # 顧客名が部分一致する候補をフィルタリング (ただし、完全一致は既に処理済み)
@@ -111,6 +131,7 @@ def _find_best_master_for_plan(plan_row, master_df):
         if not _is_exact_match(normalized_plan_customer, normalized_master_customer) and \
            name_matching.get_match_score(normalized_plan_customer, normalized_master_customer) >= 80: # 部分一致もスコアで判定
             partial_customer_candidates.append(master_row)
+    debug_log.append(f"DEBUG:   Phase 2: Partial customer matches found: {len(partial_customer_candidates)} rows")
 
     if partial_customer_candidates:
         # その中で商品名を照合 (完全一致 -> 最もスコアの高い部分一致)
@@ -121,17 +142,20 @@ def _find_best_master_for_plan(plan_row, master_df):
             normalized_master_product = name_matching.normalize_text(master_row['商品名'])
             
             current_product_score = name_matching.get_match_score(normalized_plan_product, normalized_master_product)
-            
+            debug_log.append(f"DEBUG:     Partial Customer Candidate: '{master_row['お客様名']}' - '{master_row['商品名']}' (Normalized: '{normalized_master_product}') -> Product Score: {current_product_score}")
+
             if current_product_score > highest_product_score:
                 highest_product_score = current_product_score
                 best_product_match_in_partial_customer = master_row
         
         # 顧客名部分一致の中で、最もスコアの高い商品名マッチがあれば返す (閾値は80点以上とする)
         if highest_product_score >= 80:
-            return best_product_match_in_partial_customer
+            debug_log.append(f"DEBUG:   Phase 2 Best Match: '{best_product_match_in_partial_customer.get('お客様名', '')}' - '{best_product_match_in_partial_customer.get('商品名', '')}' with score {highest_product_score}")
+            return best_product_match_in_partial_customer, debug_log
 
     # --- どの条件にも合致しない場合 ---
-    return best_match_row
+    debug_log.append(f"DEBUG:   No match found. Returning empty series.")
+    return best_match_row, debug_log
 
 def _merge_plan_and_results(cleaned_plan_df, results_df):
     """クリーンな予定表と実績表をマージする。日付も考慮する。"""

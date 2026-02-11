@@ -84,7 +84,13 @@ def main():
     name_master = data_loader.load_name_master()
 
     # --- 3. ロジック実行 ---
-    progress_df = progress_logic.create_progress_table(plan_df, results_df, master_df, name_master)
+    progress_df, debug_logs = progress_logic.create_progress_table(plan_df, results_df, master_df, name_master) # 戻り値に対応
+
+    # --- デバッグログの表示 ---
+    if debug_logs:
+        with st.expander("デバッグログを表示"):
+            for log_entry in debug_logs:
+                st.code(log_entry)
 
     # --- 4. UI表示 ---
     if progress_df.empty:
