@@ -7,18 +7,14 @@ import name_matching
 
 from name_matching import apply_name_matching, get_name_similarity_score
 
-def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
+def create_progress_table(plan_df, results_df, master_df, name_master):
     """
     新しいメインロジック：
     1. 予定表の名称を商品マスタでクリーンナップ
     2. クリーンになった予定表と実績表を突合
     """
-    all_debug_logs = []
-    all_debug_logs.append(f"\nDEBUG: --- create_progress_table ---")
-
     # 1. 予定表の名称を商品マスタを使いクリーンナップ
-    cleaned_plan_df = _clean_plan_with_master(plan_df, master_df, name_master) # _clean_plan_with_master の戻り値に対応
-    all_debug_logs.extend(log_cpm)
+    cleaned_plan_df = _clean_plan_with_master(plan_df, master_df, name_master)
 
     # 2. 名称がクリーンになった予定表と実績表を突合
     final_df = _merge_plan_and_results(cleaned_plan_df, results_df)
@@ -36,43 +32,33 @@ def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.Da
         
         final_df = final_df[is_unplanned_but_valid | is_planned_and_valid]
 
-    all_debug_logs.append(f"DEBUG: --- create_progress_table finished ---")
-    return final_df, all_debug_logs
+    return final_df
 
-def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
+def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修正
     """予定表の各行を、商品マスタと照合し、お客様名・商品名をクリーンなものに更新する"""
-    debug_log = []
-    debug_log.append(f"\nDEBUG: --- _clean_plan_with_master ---")
-
     if plan_df.empty:
-        debug_log.append(f"DEBUG:   plan_df is empty.")
-        return pd.DataFrame(), debug_log
+        return pd.DataFrame()
 
     # まず、予定表の表記揺れを「振れ幅表(name_master)」で吸収する
     plan_df_matched = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
-    debug_log.extend(log_apm)
     
     cleaned_rows = []
     for idx, plan_row in plan_df_matched.iterrows():
         new_row = plan_row.to_dict()
         
         # この予定に最も一致するマスタ品目を探す
-        best_master_row, log_fbm = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
-        debug_log.extend(log_fbm)
+        best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
         
         if not best_master_row.empty: # pd.Series.empty で判定
             # マッチしたら、マスタの綺麗な名称で上書き
             new_row['お客様名'] = best_master_row['お客様名']
             new_row['商品名'] = best_master_row['商品名']
-            debug_log.append(f"DEBUG:   Cleaned plan row {idx}: Customer='{new_row['お客様名']}', Product='{new_row['商品名']}'")
-        else:
-            debug_log.append(f"DEBUG:   No master match for plan row {idx}. Keeping original names.")
         
         cleaned_rows.append(new_row)
         
-    return pd.DataFrame(cleaned_rows), debug_log
+    return pd.DataFrame(cleaned_rows)
 
-def _find_best_master_for_plan(plan_row, master_df) -> (pd.Series, list[str]):
+def _find_best_master_for_plan(plan_row, master_df):
     """特定の予定に最も一致するマスタ品目を、スコアリングに基づいて見つける"""
     debug_log = []
     debug_log.append(f"\nDEBUG: --- _find_best_master_for_plan for plan_row: {plan_row.get('お客様名', '')} - {plan_row.get('商品名', '')} ---")
