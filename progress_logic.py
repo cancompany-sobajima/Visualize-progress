@@ -17,7 +17,7 @@ def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.Da
     all_debug_logs.append(f"\nDEBUG: --- create_progress_table ---")
 
     # 1. 予定表の名称を商品マスタを使いクリーンナップ
-    cleaned_plan_df, log_cpm = _clean_plan_with_master(plan_df, master_df, name_master) # _clean_plan_with_master の戻り値に対応
+    cleaned_plan_df = _clean_plan_with_master(plan_df, master_df, name_master) # _clean_plan_with_master の戻り値に対応
     all_debug_logs.extend(log_cpm)
 
     # 2. 名称がクリーンになった予定表と実績表を突合
@@ -49,7 +49,7 @@ def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, l
         return pd.DataFrame(), debug_log
 
     # まず、予定表の表記揺れを「振れ幅表(name_master)」で吸収する
-    plan_df_matched, log_apm = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
+    plan_df_matched = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
     debug_log.extend(log_apm)
     
     cleaned_rows = []
