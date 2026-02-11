@@ -1,6 +1,7 @@
 import re
 import unicodedata
 import pandas as pd
+from fuzzywuzzy import fuzz
 
 def normalize_text(text: str) -> str:
     """テキストを正規化する（全角→半角、大文字→小文字、記号除去）。"""
@@ -50,21 +51,16 @@ def find_best_match(name: str, master_dict: dict) -> (str, int):
 
 def get_match_score(str1: str, str2: str) -> int:
     """
-    2つの正規化済み文字列の一致度スコアを計算する（単純な部分一致）。
+    2つの正規化済み文字列の一致度スコアを計算する（fuzzywuzzyを使用）。
     """
     if not str1 or not str2:
         return 0
     
-    # 完全一致
-    if str1 == str2:
-        return 100
+    # fuzzywuzzyのtoken_set_ratioを使用してスコアを計算
+    # これは、文字列内の単語の順序や重複を考慮しつつ、最も高い類似度を返す
+    score = fuzz.token_set_ratio(str1, str2)
     
-    # 部分一致
-    if str1 in str2 or str2 in str1:
-        # 文字列長が近いほど高スコア
-        return 85 + int(15 * (1 - abs(len(str1) - len(str2)) / max(len(str1), len(str2))))
-
-    return 0
+    return score
 
 def get_name_similarity_score(master_name: str, plan_master_name: str, master_original: str, plan_original: str) -> int:
     """
