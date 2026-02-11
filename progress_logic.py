@@ -38,7 +38,6 @@ def create_progress_table(plan_df, results_df, master_df, name_master) -> (pd.Da
 
     all_debug_logs.append(f"DEBUG: --- create_progress_table finished ---")
     return final_df, all_debug_logs
-logs
 
 def _clean_plan_with_master(plan_df, master_df, name_master) -> (pd.DataFrame, list[str]): # 戻り値の型を修正
     """予定表の各行を、商品マスタと照合し、お客様名・商品名をクリーンなものに更新する"""
