@@ -46,10 +46,10 @@ def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修�
     for idx, plan_row in plan_df_matched.iterrows():
         new_row = plan_row.to_dict()
         
-        # 「型替え」の場合は照合をスキップし、そのまま「型替え」として扱う
-        if new_row.get('商品名') == '型替え':
+        # 「型替え」または「型替」の場合は照合をスキップし、そのまま扱う
+        if new_row.get('商品名') == '型替え' or new_row.get('商品名') == '型替':
             new_row['お客様名'] = new_row.get('お客様名', '') # お客様名は元の計画データを維持
-            new_row['商品名'] = '型替え'
+            new_row['商品名'] = new_row.get('商品名') # 元の「型替え」または「型替」を維持
         else:
             # この予定に最も一致するマスタ品目を探す
             best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
