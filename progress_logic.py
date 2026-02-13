@@ -259,10 +259,10 @@ def calculate_differences_and_status(df):
     df['生産数差異'] = pd.to_numeric(df['実生産数'], errors='coerce').fillna(0) - pd.to_numeric(df['予定数'], errors='coerce').fillna(0)
 
     # 生産時間差異
-    planned_duration = pd.Series(np.nan, index=df.index, dtype='float64')
+    planned_duration = np.nan
     if '予定終了時刻' in df.columns and '予定開始時刻' in df.columns:
         valid_times = df['予定終了時刻'].notna() & df['予定開始時刻'].notna()
-        planned_duration.loc[valid_times] = (df.loc[valid_times, '予定終了時刻'] - df.loc[valid_times, '予定開始時刻']).dt.total_seconds() / 60
+        planned_duration = (df.loc[valid_times, '予定終了時刻'] - df.loc[valid_times, '予定開始時刻']).dt.total_seconds() / 60
     
     # 実績総生産時間_分 は data_loader で計算済み。NaNは0で埋める。
     actual_duration = df['実績総生産時間_分'].fillna(0)
