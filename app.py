@@ -81,9 +81,6 @@ def main():
     master_df = data_loader.load_product_master()
     plan_df = data_loader.load_plan_data(selected_date)
 
-    st.subheader("デバッグ: 読み込み直後の予定データ (plan_df)")
-    st.dataframe(plan_df)
-
     results_df = data_loader.load_results_data(selected_date)
     name_master = data_loader.load_name_master()
 

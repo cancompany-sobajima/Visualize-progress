@@ -108,9 +108,6 @@ def load_plan_data(date) -> pd.DataFrame:
         df_mapped['商品名'] = df['商品名（型の名前）']
         df_mapped['予定数'] = pd.to_numeric(df['予定数量'], errors='coerce')
 
-        # ★★★ 新しいロジック: 予定数が0より大きいものだけを対象とする ★★★
-        df_mapped = df_mapped[df_mapped['予定数'] > 0].copy()
-        
         # 予定開始時刻が空欄のデータを除外
         df_mapped.dropna(subset=['予定開始時刻'], inplace=True)
 
