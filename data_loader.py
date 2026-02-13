@@ -94,8 +94,7 @@ def load_plan_data(date) -> pd.DataFrame:
         df['日付'] = pd.to_datetime(df['日付'], errors='coerce')
 
         # 日付でフィルタリング
-        target_dates = [date, date - pd.Timedelta(days=1)]
-        df = df[df['日付'].dt.date.isin(target_dates)].copy()
+        df = df[df['日付'].dt.date == date].copy()
         if df.empty:
             st.info(f"{date} の生産予定データはありません。")
             return pd.DataFrame()
@@ -134,8 +133,8 @@ def load_results_data(date) -> pd.DataFrame:
     認証情報は一時ファイル経由で安全に渡す。
     """
     # --- 1. 日付設定とパスの検証 ---
-    end_date = date + timedelta(days=1)
-    start_date = date - timedelta(days=1)
+    end_date = date
+    start_date = end_date - timedelta(days=1)
     start_date_str = start_date.strftime('%Y-%m-%d')
     end_date_str = end_date.strftime('%Y-%m-%d')
 
