@@ -109,7 +109,7 @@ def load_plan_data(date) -> pd.DataFrame:
         df_mapped['予定数'] = pd.to_numeric(df['予定数量'], errors='coerce')
         
         # 予定開始時刻が空欄のデータを除外
-        df_mapped.dropna(subset=['予定開始時刻'], inplace=True)
+        df_mapped.dropna(subset=['予定開始時刻', '予定数'], inplace=True)
 
         return df_mapped
 
