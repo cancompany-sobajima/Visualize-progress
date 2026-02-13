@@ -87,6 +87,7 @@ def load_plan_data(date) -> pd.DataFrame:
     df = _load_data_from_gsheet(client, PLAN_SHEET_ID, PLAN_WORKSHEET_NAME)
     
     if df.empty:
+        st.info(f"DEBUG: load_plan_data - スプレッドシートからデータが読み込まれませんでした。") # デバッグ用
         return pd.DataFrame()
 
     try:
@@ -108,8 +109,10 @@ def load_plan_data(date) -> pd.DataFrame:
         df_mapped['商品名'] = df['商品名（型の名前）']
         df_mapped['予定数'] = pd.to_numeric(df['予定数量'], errors='coerce')
         
-        # 予定開始時刻が空欄のデータを除外
+        st.write(f"DEBUG: load_plan_data - Before dropna shape: {df_mapped.shape}") # デバッグ用
+        # 予定開始時刻または予定数が空欄のデータを除外
         df_mapped.dropna(subset=['予定開始時刻', '予定数'], inplace=True)
+        st.write(f"DEBUG: load_plan_data - After dropna shape: {df_mapped.shape}") # デバッグ用
 
         return df_mapped
 
