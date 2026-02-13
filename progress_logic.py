@@ -227,22 +227,27 @@ def _merge_plan_and_results(cleaned_plan_df, results_df):
             if col in merged_df.columns:
                 merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
 
-        # ★★★ ここから修正 ★★★
-        # 予定数・実績数カラムが存在しない場合に備えて、列を確保する
-        if '予定数' not in merged_df.columns:
-            merged_df['予定数'] = np.nan
-        if '実生産数' not in merged_df.columns:
-            merged_df['実生産数'] = np.nan
-        # ★★★ ここまで修正 ★★★
-
-        # 実績関連の列が存在しない場合に備えて、列を確保する
-        result_cols = ['実生産開始時刻', '実生産終了時刻', '実生産数', '実績総生産時間_分']
-        for col in result_cols:
+        # --- 列の存在を保証する ---
+        # 予定関連の列
+        plan_cols_to_ensure = {
+            '予定開始時刻': pd.NaT,
+            '予定終了時刻': pd.NaT,
+            '予定数': np.nan
+        }
+        for col, default_val in plan_cols_to_ensure.items():
             if col not in merged_df.columns:
-                if '時刻' in col:
-                    merged_df[col] = pd.NaT
-                else:
-                    merged_df[col] = np.nan
+                merged_df[col] = default_val
+
+        # 実績関連の列
+        result_cols_to_ensure = {
+            '実生産開始時刻': pd.NaT,
+            '実生産終了時刻': pd.NaT,
+            '実生産数': np.nan,
+            '実績総生産時間_分': np.nan
+        }
+        for col, default_val in result_cols_to_ensure.items():
+            if col not in merged_df.columns:
+                merged_df[col] = default_val
     
     return merged_df
 
