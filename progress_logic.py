@@ -34,32 +34,32 @@ def create_progress_table(plan_df, results_df, master_df, name_master): # 戻り
 
     return final_df
 
-def _clean_plan_with_master(plan_df, master_df, name_master): # 戻り値型修正
+def _clean_plan_with_master(plan_df, master_df, name_master):
     """予定表の各行を、商品マスタと照合し、お客様名・商品名をクリーンなものに更新する"""
     if plan_df.empty:
         return pd.DataFrame()
 
-    # まず、予定表の表記揺れを「振れ幅表(name_master)」で吸収する
-    plan_df_matched = name_matching.apply_name_matching(plan_df, name_master) # apply_name_matching の戻り値に対応
-    
     cleaned_rows = []
-    for idx, plan_row in plan_df_matched.iterrows():
-        new_row = plan_row.to_dict()
-        
+    for idx, original_plan_row in plan_df.iterrows(): # 元のplan_dfをイテレート
+        new_row = original_plan_row.to_dict() # 元のデータでnew_rowを初期化
+
         # 「型替え」または「型替」の場合は照合をスキップし、そのまま扱う
         if new_row.get('商品名') == '型替え' or new_row.get('商品名') == '型替':
-            new_row['お客様名'] = new_row.get('お客様名', '') # お客様名は元の計画データを維持
-            new_row['商品名'] = new_row.get('商品名') # 元の「型替え」または「型替」を維持
+            # お客様名と商品名は元の計画データを維持 (new_rowは既にoriginal_plan_rowの内容)
+            pass 
         else:
+            # 「型替え」/「型替」でない場合のみ、名寄せとマスタ照合を行う
+            # apply_name_matching は DataFrame を受け取るので、一時的に1行DataFrameを作成
+            temp_df_for_matching = pd.DataFrame([original_plan_row])
+            plan_row_matched = name_matching.apply_name_matching(temp_df_for_matching, name_master).iloc[0] # Seriesとして取得
+
             # この予定に最も一致するマスタ品目を探す
-            best_master_row = _find_best_master_for_plan(plan_row, master_df) # _find_best_master_for_plan の戻り値に対応
+            best_master_row = _find_best_master_for_plan(plan_row_matched, master_df)
             
-            if not best_master_row.empty: # pd.Series.empty で判定
-                # マッチしたら、マスタの綺麗な名称で上書き
+            if not best_master_row.empty:
                 new_row['お客様名'] = best_master_row['お客様名']
                 new_row['商品名'] = best_master_row['商品名']
             else:
-                # マッチしなかった場合、商品マスタの名称を使用せず、「不明」とする
                 new_row['お客様名'] = "不明"
                 new_row['商品名'] = "不明"
         
