@@ -229,7 +229,7 @@ def _merge_plan_and_results(cleaned_plan_df, results_df):
         
         # 予定・実績関連の列が存在しない場合に備えて、列を確保する
         # 予定数もここで初期化することで、KeyErrorを回避
-        required_cols = ['予定数', '実生産開始時刻', '実生産終了時刻', '実生産数', '実績総生産時間_分']
+        required_cols = ['予定数', '予定開始時刻', '予定終了時刻', '実生産開始時刻', '実生産終了時刻', '実生産数', '実績総生産時間_分']
         for col in required_cols:
             if col not in merged_df.columns:
                 if '時刻' in col:
