@@ -105,14 +105,14 @@ def main():
         '予定終了時刻': '終了予定',
         '実生産開始時刻': '実開始',
         '実生産終了時刻': '実終了',
-        '生産時間差異(分)': '差異(分)'
+        '生産数/h': '生産数/h' # 新しく追加
     }
     display_df = progress_df.rename(columns=rename_map)
 
     # 表示したい列を、指定された順序で定義
     display_order = [
         '予定', 'ライン', 'お客様名', '商品名', '予定数', '実生産数', '差異(数)',
-        '開始予定', '終了予定', '実開始', '実終了', '差異(分)'
+        '開始予定', '終了予定', '実開始', '実終了', '生産数/h' # 差異(分)を生産数/hに置き換え
     ]
     
     # 存在しない列を除外しつつ、表示用にDFを再構成
@@ -126,7 +126,7 @@ def main():
 
     # 差異セルのスタイルを適用
     def style_diff_cells(s):
-        """差異(数)はマイナス、差異(分)はプラスの場合に背景色を変更する。"""
+        """差異(数)はマイナスの場合に背景色を変更する。"""
         styles = []
         # Seriesの名前で処理を分岐
         if s.name == '差異(数)':
@@ -134,17 +134,12 @@ def main():
             is_negative = pd.to_numeric(s, errors='coerce') < 0
             for v in is_negative:
                 styles.append('background-color: red; color: white' if v else '')
-        elif s.name == '差異(分)':
-            # 差異(分)はプラスで背景色を変更
-            is_positive = pd.to_numeric(s, errors='coerce') > 0
-            for v in is_positive:
-                styles.append('background-color: red; color: white' if v else '')
         else:
             # その他の列はスタイルを適用しない
             styles = ['' for _ in s]
         return styles
 
-    style_columns = [col for col in ['差異(数)', '差異(分)'] if col in display_df.columns]
+    style_columns = [col for col in ['差異(数)'] if col in display_df.columns] # 差異(分)を削除
     if style_columns:
         styled_df.apply(style_diff_cells, subset=style_columns, axis=0)
 
@@ -156,7 +151,7 @@ def main():
         '予定数': '{:.0f}',
         '実生産数': '{:.0f}',
         '差異(数)': '{:+.0f}',
-        '差異(分)': '{:+.1f}',
+        '生産数/h': '{:.1f}', # 新しく追加
     }, na_rep="-"))
 
     # --- タイムライン表示 ---

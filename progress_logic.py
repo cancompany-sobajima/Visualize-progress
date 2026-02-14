@@ -263,6 +263,13 @@ def calculate_differences_and_status(df):
 
     df['生産時間差異(分)'] = actual_duration - planned_duration_series.fillna(0)
 
+    # 生産数/h (実生産数 / 実稼働時間(h))
+    # 実績総生産時間_分 が0の場合はNaNとする (ゼロ除算回避)
+    df['生産数/h'] = df.apply(
+        lambda row: row['実生産数'] / (row['実績総生産時間_分'] / 60) if row['実績総生産時間_分'] > 0 else np.nan,
+        axis=1
+    )
+
     # 進捗状態
     df['進捗状態'] = df.apply(get_status, axis=1)
     
