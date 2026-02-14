@@ -227,9 +227,10 @@ def _merge_plan_and_results(cleaned_plan_df, results_df):
             if col in merged_df.columns:
                 merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
         
-        # 実績関連の列が存在しない場合に備えて、列を確保する
-        result_cols = ['実生産開始時刻', '実生産終了時刻', '実生産数', '実績総生産時間_分']
-        for col in result_cols:
+        # 予定・実績関連の列が存在しない場合に備えて、列を確保する
+        # 予定数もここで初期化することで、KeyErrorを回避
+        required_cols = ['予定数', '予定開始時刻', '予定終了時刻', '実生産開始時刻', '実生産終了時刻', '実生産数', '実績総生産時間_分']
+        for col in required_cols:
             if col not in merged_df.columns:
                 if '時刻' in col:
                     merged_df[col] = pd.NaT
@@ -251,15 +252,16 @@ def calculate_differences_and_status(df):
     df['生産数差異'] = pd.to_numeric(df['実生産数'], errors='coerce').fillna(0) - pd.to_numeric(df['予定数'], errors='coerce').fillna(0)
 
     # 生産時間差異
-    planned_duration = np.nan
+    # planned_duration を全ての行に対して NaN を持つ Series として初期化
+    planned_duration_series = pd.Series(np.nan, index=df.index)
     if '予定終了時刻' in df.columns and '予定開始時刻' in df.columns:
         valid_times = df['予定終了時刻'].notna() & df['予定開始時刻'].notna()
-        planned_duration = (df.loc[valid_times, '予定終了時刻'] - df.loc[valid_times, '予定開始時刻']).dt.total_seconds() / 60
+        if valid_times.any(): # 有効な時刻データがある場合のみ計算
+            planned_duration_series.loc[valid_times] = (df.loc[valid_times, '予定終了時刻'] - df.loc[valid_times, '予定開始時刻']).dt.total_seconds() / 60
     
-    # 実績総生産時間_分 は data_loader で計算済み。NaNは0で埋める。
     actual_duration = df['実績総生産時間_分'].fillna(0)
 
-    df['生産時間差異(分)'] = actual_duration - planned_duration.fillna(0)
+    df['生産時間差異(分)'] = actual_duration - planned_duration_series.fillna(0)
 
     # 進捗状態
     df['進捗状態'] = df.apply(get_status, axis=1)
