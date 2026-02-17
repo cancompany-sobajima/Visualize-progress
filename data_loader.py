@@ -139,7 +139,7 @@ def load_plan_data(date) -> pd.DataFrame:
         df_mapped['担当設備'] = df['ライン']
         df_mapped['お客様名'] = df['顧客名（型替え）']
         df_mapped['商品名'] = df['商品名（型の名前）']
-        df_mapped['予定数'] = pd.to_numeric(df['予定数量'], errors='coerce')
+        df_mapped['予定数'] = pd.to_numeric(df['予定数量'].str.replace(',', '', regex=False), errors='coerce')
         
         # 9. 必須データ（時刻と数量）がない行を最終的に除外
         df_mapped.dropna(subset=['予定開始時刻', '予定数'], inplace=True)
